@@ -6,3 +6,5 @@ Product: 班表中樞 ShiftOps Calendar（第1版）
 This branch publishes the Simon-approved acceptance source for GitHub/Vercel Preview handoff.
 
 No production merge/deploy is authorized.
+
+Branch marker: 2026-04-30T16:11:07.988545+00:00
