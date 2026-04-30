@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE: SQLite does not support native enums, so all enum fields are stored as String.
+// Roles: ADMIN | MANAGER | MEMBER
+// AssignmentType: REGULAR | OVERTIME | ON_CALL | SPLIT_SEGMENT
+// PreviewStatus: DRAFT | APPLIED | DISCARDED | BLOCKED
+// AlertStatus: GENERATED | ACKNOWLEDGED | RESOLVED | ARCHIVED
+// ExportStatus: PENDING | PROCESSING | COMPLETED | FAILED | EXPIRED
+// OvertimeDisplayMode: HIDE | BADGE | CANDIDATES | ASSIGNMENTS
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String
+  role           String   @default("MEMBER")
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields:[organizationId], references:[id])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  locations Location[]
+  users     User[]
+}
+
+model Location {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  timezone       String   @default("Asia/Taipei")
+  organization   Organization @relation(fields:[organizationId], references:[id])
+}
+
+model StaffProfile {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  userId         String?
+  name           String
+  email          String?
+  roleCode       String
+  color          String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CalendarCellDisplaySetting {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  locationId          String?
+  shiftTypeId         String?
+  patternType         String?
+  patternName         String?
+  label               String
+  shortLabel          String
+  color               String
+  glowColor           String?
+  textColor           String?
+  icon                String?
+  displayPriority     Int      @default(100)
+  cellDensity         String   @default("standard")
+  showStaffNames      Boolean  @default(true)
+  showStaffCount      Boolean  @default(true)
+  showCoverageBadge   Boolean  @default(true)
+  showConflictBadge   Boolean  @default(true)
+  showOvertimeBadge   Boolean  @default(true)
+  overtimeDisplayMode String   @default("BADGE")
+  appliesTo           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ShiftType {
+  id               String   @id @default(cuid())
+  organizationId   String
+  locationId       String
+  name             String
+  code             String
+  color            String
+  startTime        String?
+  endTime          String?
+  durationMinutes  Int?
+  isAllDay         Boolean  @default(false)
+  isOnCall         Boolean  @default(false)
+  supportsSegments Boolean  @default(false)
+}
+
+model ShiftRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  name           String
+  patternType    String
+  patternName    String?
+  patternConfig  String
+  constraints    String
+  priority       Int      @default(100)
+  scopeFilter    String
+  effectiveFrom  DateTime
+  effectiveUntil DateTime?
+  active         Boolean  @default(true)
+  ruleConstraints    ShiftRuleConstraint[]
+}
+
+model ShiftRuleConstraint {
+  id       String  @id @default(cuid())
+  ruleId   String
+  category String
+  key      String
+  operator String
+  value    String
+  weight   Float?
+  source   String
+  rule     ShiftRule @relation(fields:[ruleId], references:[id])
+}
+
+model ShiftAssignment {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  date           DateTime
+  staffId        String
+  shiftTypeId    String
+  ruleId         String?
+  assignmentType String   @default("REGULAR")
+  status         String   @default("confirmed")
+  note           String?
+  applyRunId     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ShiftAssignmentSegment {
+  id           String @id @default(cuid())
+  assignmentId String
+  segmentIndex Int
+  startTime    String
+  endTime      String
+  breakMinutes Int    @default(0)
+  segmentType  String @default("work")
+}
+
+model CalendarDayProjection {
+  id               String   @id @default(cuid())
+  organizationId   String
+  locationId       String
+  date             DateTime
+  ruleProjection   String
+  assignmentSummary String
+  coverageStatus   String
+  overtimeProjection String
+  displayState     String
+  projectionHash   String
+  updatedAt        DateTime @updatedAt
+  @@unique([locationId, date])
+}
+
+model OvertimeCandidate {
+  id                String   @id @default(cuid())
+  organizationId    String
+  locationId        String
+  date              DateTime
+  targetShiftTypeId String
+  staffId           String
+  sourceShiftTypeId String?
+  reason            String
+  riskFlags         String
+  score             Float
+  status            String   @default("candidate")
+  createdAt         DateTime @default(now())
+}
+
+model OvertimeAssignment {
+  id                String   @id @default(cuid())
+  organizationId    String
+  locationId        String
+  candidateId       String?
+  date              DateTime
+  staffId           String
+  targetShiftTypeId String
+  assignmentId      String?
+  approvedBy        String
+  status            String   @default("confirmed")
+  createdAt         DateTime @default(now())
+}
+
+model StaffAvailabilityWindow {
+  id               String   @id @default(cuid())
+  staffId          String
+  startsAt         DateTime
+  endsAt           DateTime
+  availabilityType String
+  reason           String?
+}
+
+model StaffSkillCertification {
+  id         String    @id @default(cuid())
+  staffId    String
+  skillCode  String
+  validFrom  DateTime?
+  validUntil DateTime?
+}
+
+model CoverageRequirement {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  shiftTypeId    String
+  weekday        Int?
+  date           DateTime?
+  minCount       Int
+  targetCount    Int
+  requiredSkills String?
+}
+
+model CoverageAlert {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  date           DateTime
+  shiftTypeId    String
+  severity       String
+  status         String   @default("GENERATED")
+  message        String
+  details        String
+  resolvedAt     DateTime?
+}
+
+model SchedulePolicyProfile {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  locationId            String?
+  name                  String
+  maxWeeklyMinutes      Int?
+  minRestMinutes        Int?
+  maxConsecutiveDays   Int?
+  rules                 String
+}
+
+model NamedPatternSeed {
+  id            String   @id @default(cuid())
+  name          String
+  patternType   String
+  defaultConfig String
+  description   String
+}
+
+model DemandForecast {
+  id                  String   @id @default(cuid())
+  locationId          String
+  date                DateTime
+  shiftTypeId         String
+  demandValue         Float
+  suggestedStaffCount Int
+  source              String
+}
+
+model AISchedulePreview {
+  id                 String   @id @default(cuid())
+  previewToken       String   @unique
+  organizationId     String
+  locationId         String
+  dateRangeStart     DateTime
+  dateRangeEnd       DateTime
+  proposedAssignments String
+  calendarProjection String
+  warnings           String
+  beforeSnapshot     String
+  status             String   @default("DRAFT")
+  createdBy          String
+  appliedAt          DateTime?
+}
+
+model RuleApplyRun {
+  id                     String   @id @default(cuid())
+  previewId              String?
+  organizationId         String
+  locationId             String
+  beforeSnapshot         String
+  afterSnapshot          String
+  affectedAssignmentIds String
+  status                 String
+  appliedBy              String
+  createdAt              DateTime @default(now())
+}
+
+model ExportJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String
+  type           String
+  status         String   @default("PENDING")
+  options        String
+  downloadUrl    String?
+  errorMessage   String?
+  expiresAt      DateTime?
+  createdBy      String
+  createdAt      DateTime @default(now())
+}
+
+model AuditEvent {
+  id              String   @id @default(cuid())
+  organizationId  String
+  actorUserId     String
+  action          String
+  targetTable     String
+  targetId        String?
+  beforeSnapshot  String?
+  afterSnapshot   String?
+  metadata        String?
+  createdAt       DateTime @default(now())
+}
+
+// SwapRequest: member requests to swap shifts with another staff member.
+// AI can suggest alternatives; manager approves/rejects.
+model SwapRequest {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  requesterId          String   // staffId who initiates the swap
+  requesterName        String
+  targetDate           DateTime // date the requester wants to swap
+  targetShiftTypeId    String   // shiftTypeId the requester is assigned
+  desiredPartnerId     String?  // optionally, desired swap partner staffId
+  desiredPartnerName   String?
+  aiSuggestions        String?  // JSON array of AI-suggested alternatives
+  status               String   @default("pending") // pending | ai_suggested | approved | rejected | cancelled
+  managerId            String?
+  managerComment       String?
+  approvedAt           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// Holiday: public/national holidays per organization+location.
+model Holiday {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String?
+  date           DateTime
+  name           String
+  description    String?
+  source         String   @default("manual") // manual | lunar | national
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// LunarDate: lunar calendar date entries per organization+location (e.g. 中秋節, 春節).
+model LunarDate {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String?
+  lunarYear      Int
+  lunarMonth     Int
+  lunarDay       Int
+  solarDate      DateTime?  // corresponding gregorian date if known
+  name           String
+  description    String?
+  source         String   @default("lunar") // lunar | traditional
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// UserAiPreference: per-user AI preference memory (org-scoped).
+model UserAiPreference {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  locationId     String?
+  preferenceKey  String
+  preferenceJson String   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@unique([userId, organizationId, preferenceKey])
+}
+
+// AICONversation: persisted AI conversation sessions for audit/history.
+model AICONversation {
+  id             String   @id @default(cuid())
+  organizationId String
+  actorUserId    String
+  role           String   // ADMIN | MANAGER | MEMBER
+  sessionId      String?
+  messages       String   // JSON array of {role, content, timestamp}
+  messageCount   Int      @default(1)
+  lastMessageAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  messages_list  AIMessage[]
+
+  @@index([organizationId, actorUserId])
+}
+
+// AIMessage: individual messages within an AI conversation thread.
+model AIMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String   // user | assistant | system
+  content        String
+  metadata       String?  // JSON: intent parsed, tokens used, etc.
+  createdAt      DateTime @default(now())
+  conversation   AICONversation @relation(fields:[conversationId], references:[id], onDelete: Cascade)
+}
