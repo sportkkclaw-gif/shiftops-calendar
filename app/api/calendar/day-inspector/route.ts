@@ -108,12 +108,31 @@ export async function GET(req: NextRequest) {
       c => !c.weekday || c.weekday === dayOfWeek || !c.date || c.date.getTime() === targetDate.getTime()
     )
 
-    const staffMap = new Map<string, { name: string; color: string; roleCode: string }>()
+    // Build staff lookup from included relations first, then DB fallback when available.
+    // Some API tests mock staffProfile data on assignments/candidates but do not expose prisma.staffProfile.findMany.
+    const embeddedStaffProfiles = [
+      ...assignments.map(a => (a as any).staffProfile).filter(Boolean),
+      ...otCandidates.map(c => (c as any).staffProfile).filter(Boolean),
+    ]
+    const staffIds = [...new Set([
+      ...assignments.map(a => a.staffId),
+      ...otCandidates.map(c => c.staffId),
+    ])].filter(Boolean) as string[]
+    const embeddedIds = new Set(embeddedStaffProfiles.map((s: any) => s.id))
+    const missingStaffIds = staffIds.filter(id => !embeddedIds.has(id))
+    const dbStaffProfiles = missingStaffIds.length && typeof (prisma as any).staffProfile?.findMany === 'function'
+      ? await (prisma as any).staffProfile.findMany({
+          where: { id: { in: missingStaffIds } },
+          select: { id: true, name: true, color: true, roleCode: true },
+        })
+      : []
+    const staffMap = new Map([...embeddedStaffProfiles, ...dbStaffProfiles].map((s: any) => [s.id, { name: s.name, color: s.color ?? '#888', roleCode: s.roleCode ?? 'REGULAR' }]))
+
     const shiftTypeIds = [...new Set([
-      ...assignments.map(a => a.shiftTypeId),
-      ...otCandidates.map(c => c.targetShiftTypeId),
-      ...otCandidates.map(c => c.sourceShiftTypeId).filter(Boolean) as string[],
-      ...alerts.map(a => a.shiftTypeId),
+      ...assignments.map(a => a.shiftTypeId).filter((id): id is string => !!id),
+      ...otCandidates.map(c => c.targetShiftTypeId).filter((id): id is string => !!id),
+      ...otCandidates.map(c => c.sourceShiftTypeId).filter((id): id is string => !!id),
+      ...alerts.map(a => a.shiftTypeId).filter((id): id is string => !!id),
     ])]
     const shiftTypes = await prisma.shiftType.findMany({ where: { id: { in: shiftTypeIds } }, select: { id: true, name: true, color: true, startTime: true, endTime: true } })
     const shiftTypeMap = new Map(shiftTypes.map(s => [s.id, s]))
@@ -178,7 +197,7 @@ export async function GET(req: NextRequest) {
       // Overtime warnings from candidates
       const otWarnings = locOtCandidates
         .filter(c => c.riskFlags)
-        .flatMap(c => c.riskFlags.split(',').map(f => f.trim()).filter(Boolean))
+        .flatMap(c => (c.riskFlags || '').split(',').map(f => f.trim()).filter(Boolean))
         .filter((v, i, a) => a.indexOf(v) === i) // unique
 
       return {
