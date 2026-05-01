@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { requireAuth, canAccessLocation } from '@/lib/rbac'
+import { previewStaff, shouldUsePreviewFallback } from '@/lib/preview-fallback'
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,10 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.error('[GET /api/staff]', err)
+    if (shouldUsePreviewFallback()) {
+      const data = previewStaff.filter(s => s.organizationId === 'org_demo')
+      return NextResponse.json({ data, meta: { requestId: `req_${Date.now()}`, page: 1, limit: data.length, total: data.length, totalPages: 1, previewFallback: true } })
+    }
     return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, { status: 500 })
   }
 }

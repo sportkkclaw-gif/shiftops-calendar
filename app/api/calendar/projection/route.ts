@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/rbac'
+import { previewProjection, shouldUsePreviewFallback } from '@/lib/preview-fallback'
 
 const QuerySchema = {
   parse(params: Record<string, string | undefined>) {
@@ -287,6 +288,13 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.error('[GET /api/calendar/projection]', err)
+    if (shouldUsePreviewFallback()) {
+      const searchParams = new URL(req.url).searchParams
+      const month = searchParams.get('month') ?? searchParams.get('startDate') ?? searchParams.get('start') ?? '2026-05'
+      const organizationId = searchParams.get('organizationId') ?? 'org_demo'
+      const locationId = searchParams.get('locationId') ?? 'loc_demo'
+      return NextResponse.json({ data: previewProjection(month, organizationId, locationId), meta: { requestId: `req_${Date.now()}`, previewFallback: true } })
+    }
     return NextResponse.json(
       { error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } },
       { status: 500 }
